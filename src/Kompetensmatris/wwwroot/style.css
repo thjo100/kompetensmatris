@@ -81,6 +81,7 @@ button, select {
 button:hover { border-color: var(--line); }
 button.primary { background: var(--primary); border-color: var(--primary); color: var(--primary-text); }
 button.danger { color: var(--danger); }
+button.danger-fill { background: var(--danger); border-color: var(--danger); color: #fff; }
 button.icon { min-width: 30px; padding: 5px 6px; }
 input, textarea {
   background: var(--surface);

@@ -45,6 +45,9 @@ const state = {
 };
 
 const isAdmin = () => !!state.password;
+
+/** Funktioner som kan stängas av där de inte fungerar (t.ex. i en inbäddad demo). */
+const features = { calendar: true };
 const $ = (id) => document.getElementById(id);
 const el = {
   tree: $('tree'),
@@ -461,6 +464,7 @@ function renderCourseBar() {
 // ---------- Dialoger ----------
 
 function openDialog({ title, body, buttons }) {
+  delete el.modal.dataset.node; // sätts av showNode så att rutan kan ritas om när datan ändras
   el.modal.replaceChildren(
     h('div', { class: 'dlg-head' },
       h('h2', {}, title),
@@ -474,6 +478,30 @@ function openDialog({ title, body, buttons }) {
 
 function closeDialog() {
   if (el.modal.open) el.modal.close();
+}
+
+/** Bekräftelse i sidans egen dialog. Svarar true om användaren väljer OK. */
+function ask(message, okLabel = 'OK', danger = false) {
+  return new Promise((resolve) => {
+    let answered = false;
+    const answer = (value) => {
+      if (answered) return;
+      answered = true;
+      el.modal.removeEventListener('close', onClose);
+      closeDialog();
+      resolve(value);
+    };
+    const onClose = () => answer(false);
+    openDialog({
+      title: 'Bekräfta',
+      body: h('p', { class: 'description' }, message),
+      buttons: [
+        h('button', { onclick: () => answer(false) }, 'Avbryt'),
+        h('button', { class: 'primary' + (danger ? ' danger-fill' : ''), onclick: () => answer(true) }, okLabel),
+      ],
+    });
+    el.modal.addEventListener('close', onClose);
+  });
 }
 
 function courseCard(c, showArea = true) {
@@ -495,7 +523,7 @@ function courseCard(c, showArea = true) {
         ? h('a', { class: 'button' + (status === 'past' ? '' : ' primary'), href: safeUrl(c.url), target: '_blank', rel: 'noopener' },
           status === 'past' ? 'Öppna länk' : isTeams ? 'Anslut i Teams' : 'Öppna möteslänk')
         : null,
-      status !== 'past' ? h('button', { onclick: () => downloadIcs(c) }, 'Lägg till i kalender') : null,
+      features.calendar && status !== 'past' ? h('button', { onclick: () => downloadIcs(c) }, 'Lägg till i kalender') : null,
       isAdmin() ? h('button', { onclick: () => editCourse(c.id) }, 'Redigera kurs') : null));
 }
 
@@ -545,6 +573,7 @@ function showNode(id) {
       h('button', { class: 'primary', onclick: closeDialog }, 'Stäng'),
     ],
   });
+  el.modal.dataset.node = id;
 }
 
 function showLogin() {
@@ -612,6 +641,7 @@ function addInput(parentId) {
     state.busy = true;
     try {
       await api('POST', '/api/nodes', { parentId, title: input.value });
+      input.value = '';
       await reload();
       focusAddInput();
     } catch (err) {
@@ -628,7 +658,8 @@ function addInput(parentId) {
     const count = text.split(/\r?\n/).filter((l) => l.trim()).length;
     state.busy = true;
     try {
-      if (!confirm(`Skapa ${count} områden från den inklistrade listan?\nIndragna rader blir underområden och [1], [2] eller [3] först på raden blir prioritet.`)) return;
+      const ok = await ask(`Skapa ${count} områden från den inklistrade listan? Indragna rader blir underområden och [1], [2] eller [3] först på raden blir prioritet.`, `Skapa ${count} områden`);
+      if (!ok) return;
       await api('POST', '/api/nodes/outline', { parentId, text });
       await reload();
       focusAddInput();
@@ -664,7 +695,8 @@ async function removeNode(n) {
   const courses = state.courses.filter((c) => [n.id, ...subtree(n.id).map((x) => x.id)].includes(c.nodeId)).length;
   const extra = [below && `${below} underområden`, courses && `${courses} kurser`].filter(Boolean).join(' och ');
   const what = n.parentId ? `"${n.title}"` : `hela trädet "${n.title}"`;
-  if (!confirm(`Ta bort ${what}${extra ? ` med ${extra}` : ''}?\nDet går inte att ångra (men du kan exportera en säkerhetskopia först).`)) return;
+  const ok = await ask(`Ta bort ${what}${extra ? ` med ${extra}` : ''}? Det går inte att ångra (men du kan exportera en säkerhetskopia först).`, 'Ta bort', true);
+  if (!ok) return;
   try {
     await api('DELETE', `/api/nodes/${n.id}`);
     closeDialog();
@@ -832,7 +864,7 @@ function editCourse(courseId, nodeId) {
   };
 
   const remove = async () => {
-    if (!confirm(`Ta bort kursen "${c.title}"?`)) return;
+    if (!(await ask(`Ta bort kursen "${c.title}"?`, 'Ta bort kurs', true))) return;
     try {
       await api('DELETE', `/api/courses/${c.id}`);
       await reload();
@@ -876,7 +908,7 @@ async function importData(file) {
   try {
     const data = JSON.parse(await file.text());
     const summary = `${data.nodes?.length ?? 0} områden och ${data.courses?.length ?? 0} kurser`;
-    if (!confirm(`Ersätta ALL data med innehållet i ${file.name} (${summary})?`)) return;
+    if (!(await ask(`Ersätta ALL data med innehållet i ${file.name} (${summary})?`, 'Ersätt all data', true))) return;
     await api('PUT', '/api/data', data);
     state.treeId = null;
     await reload();
