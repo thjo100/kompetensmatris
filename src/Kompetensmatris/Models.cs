@@ -5,7 +5,7 @@ namespace Kompetensmatris;
 /// Noderna ligger i en platt lista där <see cref="Node.ParentId"/> pekar på föräldern.
 /// Noder utan förälder är rötter, dvs. varsitt träd. Syskonens ordning är ordningen i listan.
 /// </remarks>
-public class AppData
+public partial class AppData
 {
     public List<Node> Nodes { get; set; } = [];
     public List<Course> Courses { get; set; } = [];
@@ -78,6 +78,50 @@ public class AppData
         }
         Add(input.ParentId, items);
         return created;
+    }
+
+    /// <summary>
+    /// Ersätter ett helt träds struktur (används av Kod-vyn). <c>Nodes</c> är trädets noder i dokumentordning,
+    /// roten först och varje förälder före sina barn. Befintliga id:n behåller beskrivning, länkar och kurser,
+    /// nya id:n skapas och noder i trädet som inte finns med tas bort (tillsammans med sina kurser).
+    /// </summary>
+    public List<Node> ReplaceTree(string rootId, TreeInput input)
+    {
+        var root = GetNode(rootId);
+        if (root.ParentId != null) throw ApiException.BadRequest("Det är inte roten i ett träd.");
+        var items = input.Nodes ?? [];
+        if (items.Count == 0 || items[0].Id != rootId || items[0].ParentId != null)
+            throw ApiException.BadRequest("Första raden måste vara trädets rot.");
+
+        var treeIds = SubtreeIds(rootId);
+        var byId = Nodes.Where(n => treeIds.Contains(n.Id)).ToDictionary(n => n.Id);
+        var seen = new HashSet<string>();
+        var result = new List<Node>();
+        for (var i = 0; i < items.Count; i++)
+        {
+            var item = items[i];
+            if (item.Id is null || !ValidId().IsMatch(item.Id)) throw ApiException.BadRequest("Ogiltigt id.");
+            if (!seen.Add(item.Id)) throw ApiException.BadRequest($"Id {item.Id} förekommer flera gånger.");
+            if (!treeIds.Contains(item.Id) && Nodes.Any(n => n.Id == item.Id))
+                throw ApiException.BadRequest($"Id {item.Id} tillhör ett annat träd.");
+            if (i > 0 && (item.ParentId is null || !seen.Contains(item.ParentId) || item.ParentId == item.Id))
+                throw ApiException.BadRequest($"\"{item.Title}\" måste ligga under en rad ovanför sig.");
+            var title = Required(item.Title, "Titel", 200);
+            if (item.Priority is < 1 or > 3) throw ApiException.BadRequest("Prioritet måste vara 1, 2, 3 eller tom.");
+
+            var node = byId.GetValueOrDefault(item.Id) ?? new Node { Id = item.Id };
+            node.ParentId = item.ParentId;
+            node.Title = title;
+            node.Priority = item.Priority;
+            result.Add(node);
+        }
+
+        var removed = treeIds.Where(id => !seen.Contains(id)).ToHashSet();
+        Courses.RemoveAll(c => removed.Contains(c.NodeId));
+        var position = Nodes.FindIndex(n => treeIds.Contains(n.Id)); // behåll trädets plats bland rötterna
+        Nodes.RemoveAll(n => treeIds.Contains(n.Id));
+        Nodes.InsertRange(Math.Clamp(position, 0, Nodes.Count), result);
+        return result;
     }
 
     // ---------- Kurser ----------
@@ -208,6 +252,9 @@ public class AppData
     }
 
     private static string NewId() => Guid.NewGuid().ToString("N")[..10];
+
+    [System.Text.RegularExpressions.GeneratedRegex("^[A-Za-z0-9_-]{1,40}$")]
+    private static partial System.Text.RegularExpressions.Regex ValidId();
 }
 
 public class Node
@@ -243,6 +290,8 @@ public record MoveInput(string? ParentId, int Index);
 public record OutlineInput(string? ParentId, string? Text);
 public record CourseInput(string? NodeId, string? Title, DateTimeOffset? Start, DateTimeOffset? End, string? Url, string? Teacher, string? Description);
 public record LoginInput(string? Password);
+public record TreeNodeInput(string? Id, string? ParentId, string? Title, int? Priority);
+public record TreeInput(List<TreeNodeInput>? Nodes);
 
 /// <summary>Fel som ska visas för användaren, t.ex. "Titel måste fyllas i".</summary>
 public class ApiException(int statusCode, string message) : Exception(message)

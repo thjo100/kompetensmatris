@@ -19,6 +19,7 @@ Om någon håller en **kurs** i ett område syns det direkt: rutan får en etike
   - genomförda kurser göms under *Tidigare kurser*
 - **Flera träd** (t.ex. en per roll), som man väljer i en meny när det finns fler än ett.
 - **Sök**, **zoom** samt **expandera/fäll ihop alla**.
+- **Kod-vy** (som i Visual Basic): hela trädet som indenterad text för att snabbt skriva in eller klistra in många rubriker.
 - **Adminläge** med ett enda lösenord:
   - `+` lägger till ett underområde direkt i trädet. Skriv namnet och tryck Enter, sedan nästa.
   - Klistra in en **indenterad lista** i fältet för att skapa många områden på en gång (se nedan).
@@ -26,6 +27,27 @@ Om någon håller en **kurs** i ett område syns det direkt: rutan får en etike
   - `↑ ↓` / `← →` ändrar ordningen och `🗑` tar bort (med underområden och kurser).
   - **Exportera** och **Importera** all data som JSON (säkerhetskopia).
 - Ljust och mörkt tema (följer datorns inställning) och fungerar i mobilen.
+
+### Kod-vyn
+
+Fliken **Kod** (eller <kbd>F7</kbd>, som *View Code* i Visual Basic; <kbd>Skift</kbd>+<kbd>F7</kbd> tillbaka till **Design**) visar hela trädet som text, en rad per område. Det är det snabbaste sättet att lägga in många rubriker på en gång:
+
+```text
+LST Systemutvecklare
+  Grunder i C#
+    [1] Async/await
+    [1] Generics
+  GIS
+    [1] GeoJSON
+    Kartor
+      [2] Leaflet
+```
+
+- <kbd>Tab</kbd> drar in raden (den hamnar under raden ovanför), <kbd>Skift</kbd>+<kbd>Tab</kbd> flyttar ut den. Markera flera rader för att flytta alla.
+- <kbd>Enter</kbd> ger en ny rad med samma indrag. <kbd>Ctrl</kbd>+<kbd>S</kbd> sparar.
+- Medan du skriver visar sidan vad som kommer att hända, t.ex. *Osparat: 3 nya · 1 nytt namn · 1 tas bort*, eller vilken rad som är fel.
+- Raderna matchas mot befintliga områden: samma namn är samma område, samma namn på en annan plats är en flytt, och en ändrad rad på samma plats är ett namnbyte. Beskrivning, länkar och kurser följer alltså med. Tar du bort rader frågar sidan först och visar vad som försvinner.
+- Den som inte är inloggad ser koden skrivskyddad.
 
 ### Klistra in en lista
 
@@ -153,6 +175,7 @@ Alla ändrande anrop kräver headern `X-Admin-Password`.
 | POST   | `/api/nodes`              | Skapa område `{ parentId, title, priority, description, links }` (`parentId: null` = nytt träd) |
 | POST   | `/api/nodes/outline`      | Skapa många från text `{ parentId, text }`         |
 | PUT    | `/api/nodes/{id}`         | Ändra område                                       |
+| PUT    | `/api/trees/{id}`         | Kod-vyn: ersätt trädets struktur `{ nodes: [{ id, parentId, title, priority }] }` i dokumentordning |
 | POST   | `/api/nodes/{id}/move`    | Flytta `{ parentId, index }`                       |
 | DELETE | `/api/nodes/{id}`         | Ta bort område med underområden och kurser         |
 | POST   | `/api/courses`            | Skapa kurs `{ nodeId, title, start, end, url, teacher, description }` |

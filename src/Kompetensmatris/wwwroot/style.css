@@ -346,6 +346,93 @@ input:focus, textarea:focus, select:focus, button:focus-visible {
 
 .empty { text-align: center; padding: 60px 20px; color: var(--muted); }
 
+/* ---------- Flikar: Design / Kod ---------- */
+.view-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 16px 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.view-tabs button {
+  border-radius: 8px 8px 0 0;
+  border-color: transparent;
+  background: transparent;
+  margin-bottom: -1px;
+  padding: 6px 18px;
+  color: var(--muted);
+}
+.view-tabs button:hover { color: var(--text); border-color: transparent; }
+.view-tabs button[aria-selected="true"] {
+  background: var(--bg);
+  border-color: var(--border);
+  border-bottom-color: var(--bg);
+  color: var(--text);
+  font-weight: 600;
+}
+body.view-code .design-only { display: none !important; }
+
+/* ---------- Kod-vyn ---------- */
+.code-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px 16px;
+}
+.code-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.code-status { font-size: 13px; color: var(--muted); }
+.code-status.changed { color: var(--text); font-weight: 600; }
+.code-status.error { color: var(--danger); font-weight: 600; }
+.code-editor {
+  flex: 1;
+  min-height: 260px;
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  overflow: hidden;
+  font: 13px/1.6 ui-monospace, "Cascadia Mono", Consolas, "SFMono-Regular", Menlo, monospace;
+}
+.code-editor:focus-within { outline: 2px solid var(--primary); outline-offset: 1px; }
+.gutter {
+  margin: 0;
+  padding: 10px 8px 10px 12px;
+  min-width: 3.5em;
+  text-align: right;
+  color: var(--muted);
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+  user-select: none;
+  font: inherit;
+}
+.code-editor textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 10px 12px;
+  resize: none;
+  font: inherit;
+  white-space: pre;
+  overflow: auto;
+  tab-size: 2;
+  background: var(--surface);
+}
+.code-editor textarea:focus { outline: none; }
+.code-editor textarea[readonly] { color: var(--muted); }
+.code-help { margin: 0; font-size: 12px; color: var(--muted); max-width: 110ch; }
+kbd, .code-help code {
+  font: 11px ui-monospace, Consolas, monospace;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
+  background: var(--surface);
+}
+
 /* ---------- Dialoger ---------- */
 dialog {
   width: min(640px, calc(100vw - 32px));

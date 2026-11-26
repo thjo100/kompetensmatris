@@ -47,12 +47,17 @@ public class DataStore
         get { lock (_lock) return _json; }
     }
 
-    /// <summary>Gör en ändring och sparar. Kastar ändringen ett fel sparas ingenting.</summary>
+    /// <summary>
+    /// Gör en ändring och sparar. Ändringen görs på en kopia, så kastar den ett fel
+    /// lämnas datan helt orörd (allt eller inget).
+    /// </summary>
     public T Update<T>(Func<AppData, T> change)
     {
         lock (_lock)
         {
-            var result = change(_data);
+            var copy = JsonSerializer.Deserialize<AppData>(_json, JsonOptions)!;
+            var result = change(copy);
+            _data = copy;
             _json = Save();
             return result;
         }

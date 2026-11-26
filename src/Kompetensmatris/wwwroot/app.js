@@ -42,6 +42,8 @@ const state = {
   password: loadPassword(),
   addingTo: null, // id för noden som just nu får ett nytt underområde
   busy: false,
+  view: local.get('view', 'design') === 'code' ? 'code' : 'design',
+  code: { base: '', dirty: false, saving: false, escaped: false, timer: null },
 };
 
 const isAdmin = () => !!state.password;
@@ -63,6 +65,14 @@ const el = {
   adminHint: $('adminHint'),
   zoomReset: $('zoomReset'),
   importFile: $('importFile'),
+  tabDesign: $('tabDesign'),
+  tabCode: $('tabCode'),
+  codeView: $('codeView'),
+  codeText: $('codeText'),
+  codeGutter: $('codeGutter'),
+  codeStatus: $('codeStatus'),
+  codeSave: $('codeSave'),
+  codeRevert: $('codeRevert'),
 };
 
 // ---------- Små hjälpfunktioner ----------
@@ -266,6 +276,7 @@ function render() {
   renderTopbar();
   computeSearch();
   renderCourseBar();
+  renderCode();
 
   el.tree.style.zoom = state.zoom;
   el.zoomReset.textContent = Math.round(state.zoom * 100) + '%';
@@ -435,6 +446,8 @@ function renderTopbar() {
   el.treeSelect.hidden = roots.length < 2;
   el.treeSelect.replaceChildren(...roots.map((r) => h('option', { value: r.id }, r.title)));
   el.treeSelect.value = state.treeId || '';
+  el.treeSelect.disabled = state.code.dirty; // byt inte träd med osparad kod
+  $('newTree').disabled = state.code.dirty;
   el.loginBtn.textContent = isAdmin() ? 'Logga ut' : 'Logga in';
   el.loginBtn.classList.toggle('primary', !isAdmin());
   el.adminTools.hidden = !isAdmin();
@@ -480,8 +493,11 @@ function closeDialog() {
   if (el.modal.open) el.modal.close();
 }
 
-/** Bekräftelse i sidans egen dialog. Svarar true om användaren väljer OK. */
-function ask(message, okLabel = 'OK', danger = false) {
+/**
+ * Fråga i sidans egen dialog. choices: [{ label, value, primary?, danger? }].
+ * Svarar med värdet för knappen som valdes, eller null om dialogen stängdes.
+ */
+function choose(title, message, choices) {
   return new Promise((resolve) => {
     let answered = false;
     const answer = (value) => {
@@ -491,17 +507,26 @@ function ask(message, okLabel = 'OK', danger = false) {
       closeDialog();
       resolve(value);
     };
-    const onClose = () => answer(false);
+    const onClose = () => answer(null);
     openDialog({
-      title: 'Bekräfta',
+      title,
       body: h('p', { class: 'description' }, message),
-      buttons: [
-        h('button', { onclick: () => answer(false) }, 'Avbryt'),
-        h('button', { class: 'primary' + (danger ? ' danger-fill' : ''), onclick: () => answer(true) }, okLabel),
-      ],
+      buttons: choices.map((c) => h('button', {
+        class: [c.primary ? 'primary' : '', c.danger ? 'danger-fill' : '', c.left ? 'left' : ''].filter(Boolean).join(' '),
+        onclick: () => answer(c.value),
+      }, c.label)),
     });
     el.modal.addEventListener('close', onClose);
   });
+}
+
+/** Bekräftelse i sidans egen dialog. Svarar true om användaren väljer OK. */
+async function ask(message, okLabel = 'OK', danger = false) {
+  const value = await choose('Bekräfta', message, [
+    { label: 'Avbryt', value: false },
+    { label: okLabel, value: true, primary: true, danger },
+  ]);
+  return value === true;
 }
 
 function courseCard(c, showArea = true) {
@@ -918,6 +943,401 @@ async function importData(file) {
   }
 }
 
+// ---------- Kod-vyn (som "View Code" i VB6) ----------
+//
+// Trädet visas som indenterad text, en rad per område. När texten sparas matchas raderna mot
+// befintliga områden så att de behåller beskrivning, länkar och kurser:
+//   1. samma namn under samma förälder  -> samma område
+//   2. samma namn någon annanstans      -> området har flyttats
+//   3. kvarvarande rader under samma förälder som liknar ett kvarvarande område -> nytt namn
+// Det som blir över skapas som nytt respektive tas bort.
+
+const INDENT = '  ';
+
+function newId() {
+  const bytes = new Uint8Array(5);
+  crypto.getRandomValues(bytes);
+  return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** Tolkar indenterad text. Samma regler som Outline.cs på servern, plus radnummer för felmeddelanden. */
+function parseOutline(text) {
+  const roots = [];
+  const stack = [];
+  text.replace(/\r/g, '').split('\n').forEach((raw, i) => {
+    if (!raw.trim()) return;
+    let indent = 0;
+    for (const ch of raw) {
+      if (ch === ' ') indent += 1;
+      else if (ch === '\t') indent += 4;
+      else break;
+    }
+    let title = raw.trim().replace(/^([-*•+]|\d+\.)\s+/, '');
+    let priority = null;
+    const m = title.match(/^[[(]([123])[\])]\s*/);
+    if (m) {
+      priority = Number(m[1]);
+      title = title.slice(m[0].length);
+    }
+    title = title.trim();
+    if (!title) return;
+    if (title.length > 200) throw new Error(`Rad ${i + 1}: namnet är längre än 200 tecken.`);
+    const item = { title, priority, children: [], line: i + 1 };
+    while (stack.length && stack[stack.length - 1].indent >= indent) stack.pop();
+    (stack.length ? stack[stack.length - 1].item.children : roots).push(item);
+    stack.push({ indent, item });
+  });
+  return roots;
+}
+
+function treeToText(rootId) {
+  const lines = [];
+  const walk = (n, depth) => {
+    lines.push(INDENT.repeat(depth) + (n.priority ? `[${n.priority}] ` : '') + n.title);
+    kidsOf(n.id).forEach((k) => walk(k, depth + 1));
+  };
+  const root = state.byId.get(rootId);
+  if (root) walk(root, 0);
+  return lines.length ? lines.join('\n') + '\n' : '';
+}
+
+/** 1 = samma text, 0 = helt olika (Levenshtein, skiftlägesokänslig). */
+function similarity(a, b) {
+  a = a.toLowerCase();
+  b = b.toLowerCase();
+  if (a === b) return 1;
+  if (!a.length || !b.length) return 0;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return 1 - prev[b.length] / Math.max(a.length, b.length);
+}
+
+/** Räknar ut vad texten innebär för trädet. Kastar ett Error med radnummer om texten inte går att tolka. */
+function planOutline(rootId, text) {
+  const roots = parseOutline(text);
+  if (!roots.length) throw new Error('Koden är tom. Första raden ska vara trädets namn.');
+  if (roots.length > 1) {
+    throw new Error(`Rad ${roots[1].line}: bara trädets namn får stå längst till vänster. Dra in raden med Tab.`);
+  }
+  const rootItem = roots[0];
+  const oldRoot = state.byId.get(rootId);
+  const oldNodes = [oldRoot, ...subtree(rootId)];
+  const used = new Set();
+  const all = [];
+  (function collect(item, parent) {
+    item.parent = parent;
+    all.push(item);
+    item.children.forEach((c) => collect(c, item));
+  })(rootItem, null);
+
+  const matchExact = (item) => {
+    for (const c of item.children) {
+      if (c.node) continue;
+      const o = kidsOf(item.node.id).find((x) => !used.has(x.id) && x.title === c.title);
+      if (o) assign(c, o);
+    }
+  };
+  const assign = (item, node) => {
+    item.node = node;
+    used.add(node.id);
+    matchExact(item);
+  };
+
+  // 1. Samma namn under samma förälder.
+  assign(rootItem, oldRoot);
+  // 2. Samma namn någon annanstans i trädet: flyttat.
+  for (const item of all) {
+    if (item.node) continue;
+    const o = oldNodes.find((x) => !used.has(x.id) && x.title === item.title);
+    if (o) assign(item, o);
+  }
+  // 3. Nytt namn: en kvarvarande rad under samma förälder som liknar ett kvarvarande område
+  //    (eller är den enda kvarvarande på båda sidor).
+  const renames = (item) => {
+    if (item.node) {
+      const newLeft = item.children.filter((c) => !c.node);
+      const oldLeft = kidsOf(item.node.id).filter((x) => !used.has(x.id));
+      const single = newLeft.length === 1 && oldLeft.length === 1;
+      for (const c of newLeft) {
+        let best = null;
+        let score = -1;
+        for (const o of oldLeft) {
+          const s = similarity(c.title, o.title);
+          if (s > score) { best = o; score = s; }
+        }
+        if (best && (single || score >= 0.5)) {
+          oldLeft.splice(oldLeft.indexOf(best), 1);
+          assign(c, best);
+        }
+      }
+    }
+    item.children.forEach(renames);
+  };
+  renames(rootItem);
+
+  for (const item of all) item.id = item.node ? item.node.id : newId();
+  const nodes = all.map((item) => ({
+    id: item.id,
+    parentId: item.parent ? item.parent.id : null,
+    title: item.title,
+    priority: item.priority,
+  }));
+
+  const before = [];
+  (function walk(n) {
+    before.push({ id: n.id, parentId: n.parentId ?? null, title: n.title, priority: n.priority ?? null });
+    kidsOf(n.id).forEach(walk);
+  })(oldRoot);
+
+  return {
+    nodes,
+    unchanged: JSON.stringify(before) === JSON.stringify(nodes),
+    created: all.filter((i) => !i.node),
+    renamed: all.filter((i) => i.node && i.node.title !== i.title),
+    moved: all.filter((i) => i.node && i.parent && i.node.parentId !== i.parent.id),
+    reprioritized: all.filter((i) => i.node && (i.node.priority ?? null) !== i.priority),
+    deleted: oldNodes.filter((n) => !used.has(n.id)),
+  };
+}
+
+function describePlan(plan) {
+  if (plan.unchanged) return 'Inga ändringar';
+  const count = (list, one, many) => list.length && `${list.length} ${list.length === 1 ? one : many}`;
+  const parts = [
+    count(plan.created, 'ny', 'nya'),
+    count(plan.renamed, 'nytt namn', 'nya namn'),
+    count(plan.moved, 'flyttad', 'flyttade'),
+    count(plan.reprioritized, 'ny prioritet', 'nya prioriteter'),
+    count(plan.deleted, 'tas bort', 'tas bort'),
+  ].filter(Boolean);
+  return parts.length ? parts.join(' · ') : 'Ny ordning';
+}
+
+function renderCode() {
+  const ta = el.codeText;
+  const admin = isAdmin();
+  ta.readOnly = !admin;
+  el.codeSave.hidden = !admin;
+  el.codeRevert.hidden = !admin;
+  if (!state.code.dirty && !state.code.saving) {
+    const text = treeToText(state.treeId);
+    if (ta.value !== text) {
+      const { selectionStart, selectionEnd } = ta;
+      ta.value = text;
+      if (document.activeElement === ta) ta.setSelectionRange(selectionStart, selectionEnd);
+    }
+    state.code.base = text;
+  }
+  updateGutter();
+  updateCodeStatus();
+}
+
+function updateGutter() {
+  const lines = el.codeText.value.split('\n').length;
+  if (el.codeGutter.dataset.lines !== String(lines)) {
+    el.codeGutter.textContent = Array.from({ length: lines }, (_, i) => i + 1).join('\n');
+    el.codeGutter.dataset.lines = String(lines);
+  }
+  el.codeGutter.scrollTop = el.codeText.scrollTop;
+}
+
+function updateCodeStatus() {
+  const status = el.codeStatus;
+  status.className = 'code-status';
+  if (!isAdmin()) {
+    status.textContent = 'Skrivskyddad. Logga in för att ändra trädet här.';
+    return;
+  }
+  if (!state.byId.has(state.treeId)) {
+    status.textContent = 'Skriv trädets namn på första raden och områdena indragna under. Spara skapar trädet.';
+    return;
+  }
+  if (!state.code.dirty) {
+    status.textContent = 'Inga osparade ändringar';
+    return;
+  }
+  try {
+    const plan = planOutline(state.treeId, el.codeText.value);
+    status.textContent = 'Osparat: ' + describePlan(plan);
+    status.classList.add('changed');
+  } catch (err) {
+    status.textContent = err.message;
+    status.classList.add('error');
+  }
+}
+
+function onCodeInput() {
+  state.code.dirty = el.codeText.value !== state.code.base;
+  updateGutter();
+  clearTimeout(state.code.timer);
+  state.code.timer = setTimeout(() => { updateCodeStatus(); renderTopbar(); }, 250);
+}
+
+async function saveCode() {
+  if (!isAdmin() || state.code.saving) return;
+  const text = el.codeText.value;
+  try {
+    // Inget träd ännu: skapa roten först.
+    if (!state.byId.has(state.treeId)) {
+      const roots = parseOutline(text);
+      if (roots.length !== 1) throw new Error('Första raden ska vara trädets namn och resten indraget under den.');
+      const root = await api('POST', '/api/nodes', { parentId: null, title: roots[0].title, priority: roots[0].priority });
+      state.treeId = root.id;
+      history.replaceState(null, '', '#' + root.id);
+      await reload();
+    }
+
+    const plan = planOutline(state.treeId, text);
+    if (plan.unchanged) {
+      state.code.dirty = false;
+      render();
+      return toast('Inga ändringar att spara.');
+    }
+    if (plan.deleted.length) {
+      const courseCount = (n) => state.courses.filter((c) => c.nodeId === n.id).length;
+      const names = plan.deleted.slice(0, 15).map((n) => {
+        const extra = [courseCount(n) && `${courseCount(n)} kurs`, n.description && 'beskrivning', n.links?.length && 'länkar'].filter(Boolean);
+        return `"${n.title}"${extra.length ? ` (${extra.join(', ')})` : ''}`;
+      });
+      const more = plan.deleted.length > 15 ? ` och ${plan.deleted.length - 15} till` : '';
+      const ok = await ask(`${plan.deleted.length} ${plan.deleted.length === 1 ? 'område' : 'områden'} tas bort: ${names.join(', ')}${more}. Det som hör till ${plan.deleted.length === 1 ? 'området' : 'dem'} försvinner också.`, 'Spara och ta bort', true);
+      if (!ok) return;
+    }
+
+    state.code.saving = true;
+    await api('PUT', `/api/trees/${state.treeId}`, { nodes: plan.nodes });
+    state.code.dirty = false;
+    state.code.saving = false;
+    await reload();
+    toast('Sparat: ' + describePlan(plan));
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    state.code.saving = false;
+    renderCode();
+  }
+}
+
+function revertCode() {
+  state.code.dirty = false;
+  render();
+}
+
+async function setView(view) {
+  if (view === state.view) return;
+  if (state.view === 'code' && state.code.dirty) {
+    const choice = await choose('Osparade ändringar', 'Du har ändrat i koden. Vill du spara innan du byter till Design?', [
+      { label: 'Släng ändringarna', value: 'discard', left: true },
+      { label: 'Avbryt', value: null },
+      { label: 'Spara', value: 'save', primary: true },
+    ]);
+    if (!choice) return;
+    if (choice === 'save') {
+      await saveCode();
+      if (state.code.dirty) return; // sparandet misslyckades eller avbröts
+    } else {
+      state.code.dirty = false;
+    }
+  }
+  state.view = view;
+  local.set('view', view);
+  applyView();
+  render();
+  if (view === 'code') el.codeText.focus();
+}
+
+function applyView() {
+  const code = state.view === 'code';
+  document.body.classList.toggle('view-code', code);
+  el.canvas.hidden = code;
+  el.codeView.hidden = !code;
+  el.tabDesign.setAttribute('aria-selected', String(!code));
+  el.tabCode.setAttribute('aria-selected', String(code));
+}
+
+/** Infogar text så att Ctrl+Z fortfarande fungerar. */
+function insertText(ta, text) {
+  if (!document.execCommand?.('insertText', false, text)) ta.setRangeText(text, ta.selectionStart, ta.selectionEnd, 'end');
+  onCodeInput();
+}
+
+function onCodeKeydown(e) {
+  const ta = el.codeText;
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+    e.preventDefault();
+    saveCode();
+    return;
+  }
+  if (e.key === 'Escape') { state.code.escaped = true; return; }
+  if (ta.readOnly) return;
+
+  const value = ta.value;
+  const lineStart = value.lastIndexOf('\n', ta.selectionStart - 1) + 1;
+
+  if (e.key === 'Tab' && !state.code.escaped) {
+    e.preventDefault();
+    const endBase = Math.max(ta.selectionStart, ta.selectionEnd - (ta.selectionEnd > ta.selectionStart && value[ta.selectionEnd - 1] === '\n' ? 1 : 0));
+    let lineEnd = value.indexOf('\n', endBase);
+    if (lineEnd < 0) lineEnd = value.length;
+    const multi = value.slice(ta.selectionStart, ta.selectionEnd).includes('\n');
+    if (!multi) {
+      // En rad: Tab drar in hela raden (var markören än står), Skift+Tab flyttar ut den.
+      const caret = ta.selectionStart;
+      const line = value.slice(lineStart, lineEnd);
+      const changed = e.shiftKey ? line.replace(/^( {1,2}|\t)/, '') : INDENT + line;
+      if (changed === line) return;
+      ta.setSelectionRange(lineStart, lineEnd);
+      insertText(ta, changed);
+      const pos = Math.max(lineStart, caret + changed.length - line.length);
+      ta.setSelectionRange(pos, pos);
+      return;
+    }
+    // Flera rader: dra in eller ut alla markerade rader.
+    const block = value.slice(lineStart, lineEnd);
+    const changed = block.split('\n').map((l) => (e.shiftKey ? l.replace(/^( {1,2}|\t)/, '') : (l.trim() ? INDENT + l : l))).join('\n');
+    ta.setSelectionRange(lineStart, lineEnd);
+    insertText(ta, changed);
+    ta.setSelectionRange(lineStart, lineStart + changed.length);
+    return;
+  }
+  state.code.escaped = false;
+
+  if (e.key === 'Enter' && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+    // Ny rad får samma indrag som raden ovanför.
+    e.preventDefault();
+    const indent = value.slice(lineStart).match(/^[ \t]*/)[0];
+    insertText(ta, '\n' + indent);
+  }
+}
+
+function wireCodeView() {
+  el.tabDesign.addEventListener('click', () => setView('design'));
+  el.tabCode.addEventListener('click', () => setView('code'));
+  el.codeText.addEventListener('input', onCodeInput);
+  el.codeText.addEventListener('keydown', onCodeKeydown);
+  el.codeText.addEventListener('scroll', () => { el.codeGutter.scrollTop = el.codeText.scrollTop; });
+  el.codeSave.addEventListener('click', saveCode);
+  el.codeRevert.addEventListener('click', revertCode);
+  // F7 = Kod, Skift+F7 = Design (som i Visual Basic).
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'F7' || el.modal.open) return;
+    e.preventDefault();
+    setView(e.shiftKey ? 'design' : 'code');
+  });
+  window.addEventListener('beforeunload', (e) => {
+    if (!state.code.dirty) return;
+    e.preventDefault();
+    e.returnValue = '';
+  });
+  applyView();
+}
+
 // ---------- Start ----------
 
 function setZoom(value) {
@@ -936,6 +1356,7 @@ function setAllOpen(open) {
 }
 
 function wireEvents() {
+  wireCodeView();
   el.loginBtn.addEventListener('click', () => {
     if (!isAdmin()) return showLogin();
     setPassword(null);

@@ -264,3 +264,104 @@ public class ApiTests : IDisposable
         Assert.Contains("Sparat träd", reloaded.Json);
     }
 }
+
+public class KodvyTests : IDisposable
+{
+    private static readonly JsonSerializerOptions Json = DataStore.JsonOptions;
+    private readonly TestApp _app = new();
+
+    public void Dispose() => _app.Dispose();
+
+    private async Task<AppData> GetData() =>
+        (await _app.CreateClient().GetFromJsonAsync<AppData>("/api/data", Json))!;
+
+    private async Task<(Node Root, Node A, Node B, Course Course)> CreateTree(HttpClient admin)
+    {
+        var res = await admin.PostAsJsonAsync("/api/nodes/outline", new OutlineInput(null, "Träd\n  A\n  B"));
+        var nodes = (await res.Content.ReadFromJsonAsync<List<Node>>(Json))!;
+        var b = nodes.Single(n => n.Title == "B");
+        await admin.PutAsJsonAsync($"/api/nodes/{b.Id}", new NodeInput(null, "B", null, "Beskrivning av B", null));
+        var course = (await (await admin.PostAsJsonAsync("/api/courses",
+            new CourseInput(b.Id, "Kurs i B", DateTimeOffset.UtcNow.AddDays(3), null, null, null, null)))
+            .Content.ReadFromJsonAsync<Course>(Json))!;
+        return (nodes[0], nodes[1], b, course);
+    }
+
+    [Fact]
+    public async Task Namnbyte_flytt_och_nya_rader_behaller_kurser_och_beskrivning()
+    {
+        var admin = _app.Admin();
+        var (root, a, b, course) = await CreateTree(admin);
+
+        // B byter namn och flyttas in under A, en ny rad C läggs till sist.
+        var res = await admin.PutAsJsonAsync($"/api/trees/{root.Id}", new TreeInput([
+            new(root.Id, null, "Träd", null),
+            new(a.Id, root.Id, "A", 1),
+            new(b.Id, a.Id, "B (nytt namn)", null),
+            new("nyttid123", root.Id, "C", null),
+        ]));
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+
+        var data = await GetData();
+        var savedB = data.Nodes.Single(n => n.Id == b.Id);
+        Assert.Equal("B (nytt namn)", savedB.Title);
+        Assert.Equal(a.Id, savedB.ParentId);
+        Assert.Equal("Beskrivning av B", savedB.Description);
+        Assert.Contains(data.Courses, c => c.Id == course.Id);
+        Assert.Equal(1, data.Nodes.Single(n => n.Id == a.Id).Priority);
+        Assert.Equal(["A", "C"], data.Nodes.Where(n => n.ParentId == root.Id).Select(n => n.Title));
+    }
+
+    [Fact]
+    public async Task Rader_som_tas_bort_forsvinner_med_sina_kurser()
+    {
+        var admin = _app.Admin();
+        var (root, a, b, course) = await CreateTree(admin);
+
+        var res = await admin.PutAsJsonAsync($"/api/trees/{root.Id}", new TreeInput([
+            new(root.Id, null, "Träd", null),
+            new(a.Id, root.Id, "A", null),
+        ]));
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+
+        var data = await GetData();
+        Assert.DoesNotContain(data.Nodes, n => n.Id == b.Id);
+        Assert.DoesNotContain(data.Courses, c => c.Id == course.Id);
+        Assert.Contains(data.Nodes, n => n.Title == "LST Systemutvecklare"); // andra träd orörda
+    }
+
+    [Fact]
+    public async Task Ogiltig_struktur_avvisas_och_lamnar_datan_orord()
+    {
+        var admin = _app.Admin();
+        var (root, a, b, _) = await CreateTree(admin);
+        var otherTree = (await GetData()).Nodes.First(n => n.Title == "Async/await");
+
+        // Barn före sin förälder.
+        var res = await admin.PutAsJsonAsync($"/api/trees/{root.Id}", new TreeInput([
+            new(root.Id, null, "Träd", null),
+            new(b.Id, a.Id, "B", null),
+            new(a.Id, root.Id, "A", null),
+        ]));
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+
+        // Id från ett annat träd.
+        res = await admin.PutAsJsonAsync($"/api/trees/{root.Id}", new TreeInput([
+            new(root.Id, null, "Träd", null),
+            new(otherTree.Id, root.Id, "Stulen", null),
+        ]));
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+
+        // Tom titel längre ned: inget av det som kom före får sparas.
+        res = await admin.PutAsJsonAsync($"/api/trees/{root.Id}", new TreeInput([
+            new(root.Id, null, "Nytt namn", null),
+            new(a.Id, root.Id, " ", null),
+        ]));
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+
+        var data = await GetData();
+        Assert.Equal("Träd", data.Nodes.Single(n => n.Id == root.Id).Title);
+        Assert.Equal(root.Id, data.Nodes.Single(n => n.Id == b.Id).ParentId);
+        Assert.Equal("Async/await", data.Nodes.Single(n => n.Id == otherTree.Id).Title);
+    }
+}

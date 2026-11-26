@@ -11,17 +11,17 @@
   <header class="topbar">
     <div class="brand">Kompetensmatris</div>
     <select id="treeSelect" aria-label="Välj träd" hidden></select>
-    <div class="search">
+    <div class="search design-only">
       <input id="search" type="search" placeholder="Sök område…" aria-label="Sök område">
       <span id="searchInfo" class="muted"></span>
     </div>
     <div class="spacer"></div>
-    <div class="group" role="group" aria-label="Visning">
+    <div class="group design-only" role="group" aria-label="Visning">
       <button id="zoomOut" class="icon" title="Zooma ut" aria-label="Zooma ut">−</button>
       <button id="zoomReset" class="icon zoom-level" title="Återställ zoom">100%</button>
       <button id="zoomIn" class="icon" title="Zooma in" aria-label="Zooma in">+</button>
     </div>
-    <div class="group" role="group">
+    <div class="group design-only" role="group">
       <button id="expandAll">Expandera alla</button>
       <button id="collapseAll">Fäll ihop</button>
     </div>
@@ -34,14 +34,37 @@
   </header>
 
   <section id="courseBar" class="course-bar" aria-label="Kurser" hidden></section>
-  <div id="adminHint" class="admin-hint" hidden>
+  <div id="adminHint" class="admin-hint design-only" hidden>
     Adminläge: håll muspekaren över en ruta för att lägga till (+), redigera (✎), flytta (↑ ↓) eller ta bort (🗑).
     Klistra in en indenterad lista i en ny rad för att skapa många områden på en gång.
   </div>
 
-  <main id="canvas" class="canvas">
+  <nav class="view-tabs" role="tablist" aria-label="Vy">
+    <button id="tabDesign" role="tab" aria-controls="canvas" title="Design (Skift+F7)">Design</button>
+    <button id="tabCode" role="tab" aria-controls="codeView" title="Kod (F7)">Kod</button>
+  </nav>
+
+  <main id="canvas" class="canvas" role="tabpanel" aria-labelledby="tabDesign">
     <div id="tree" class="tree"></div>
   </main>
+
+  <section id="codeView" class="code-view" role="tabpanel" aria-labelledby="tabCode" hidden>
+    <div class="code-toolbar">
+      <span id="codeStatus" class="code-status" aria-live="polite"></span>
+      <div class="spacer"></div>
+      <button id="codeRevert">Ångra ändringar</button>
+      <button id="codeSave" class="primary">Spara (Ctrl+S)</button>
+    </div>
+    <div class="code-editor">
+      <pre id="codeGutter" class="gutter" aria-hidden="true"></pre>
+      <textarea id="codeText" spellcheck="false" wrap="off" autocomplete="off" aria-label="Trädet som text"></textarea>
+    </div>
+    <p class="code-help">
+      En rad per område. <kbd>Tab</kbd> drar in raden så att den hamnar under raden ovanför, <kbd>Skift</kbd>+<kbd>Tab</kbd> flyttar ut den.
+      <code>[1]</code>, <code>[2]</code> eller <code>[3]</code> först på raden är prioritet. Byter du namn på eller flyttar en rad följer
+      beskrivning, länkar och kurser med. Tar du bort en rad frågar sidan först. <kbd>Esc</kbd> och sedan <kbd>Tab</kbd> lämnar textrutan.
+    </p>
+  </section>
 
   <dialog id="modal"></dialog>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>

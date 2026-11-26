@@ -74,6 +74,10 @@ admin.MapDelete("/nodes/{id}", (string id, DataStore store) =>
     return Results.NoContent();
 });
 
+// Kod-vyn: ersätter ett helt träds struktur (namn, prioritet, ordning och nivåer).
+admin.MapPut("/trees/{id}", (string id, TreeInput input, DataStore store) =>
+    Results.Ok(store.Update(d => d.ReplaceTree(id, input))));
+
 admin.MapPost("/courses", (CourseInput input, DataStore store) =>
     Results.Ok(store.Update(d => d.AddCourse(input))));
 
