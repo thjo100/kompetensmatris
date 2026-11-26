@@ -813,7 +813,7 @@ function editNode(id) {
 }
 
 function newTree() {
-  const title = h('input', { required: true, maxlength: 200, placeholder: 'T.ex. LST Testare' });
+  const title = h('input', { required: true, maxlength: 200, placeholder: 'T.ex. Testare' });
   const save = async (e) => {
     e.preventDefault();
     try {

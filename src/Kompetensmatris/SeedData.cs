@@ -4,7 +4,7 @@ namespace Kompetensmatris;
 public static class SeedData
 {
     private const string Example = """
-        LST Systemutvecklare
+        Systemutvecklare
           Generell utvecklarkunskap
             Dokumentstandarder
             git
