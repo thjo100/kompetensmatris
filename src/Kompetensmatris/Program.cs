@@ -21,6 +21,17 @@ if (string.IsNullOrEmpty(app.Configuration["ADMIN_PASSWORD"]))
 // Läs in (eller skapa) datafilen direkt vid start så att fel syns i loggen med en gång.
 app.Services.GetRequiredService<DataStore>();
 
+// Ligger appen under en undersökväg bakom en omvänd proxy som INTE tar bort prefixet,
+// t.ex. https://intranat/kompetens/, sätts PATH_BASE=/kompetens.
+var pathBase = app.Configuration["PATH_BASE"]?.TrimEnd('/');
+if (!string.IsNullOrEmpty(pathBase))
+{
+    if (!pathBase.StartsWith('/')) pathBase = "/" + pathBase;
+    app.UsePathBase(pathBase);
+    app.UseRouting(); // måste komma efter UsePathBase
+    app.Logger.LogInformation("Appen svarar under {PathBase}/", pathBase);
+}
+
 // Fel från valideringen skickas till webbläsaren som { "error": "..." }.
 app.Use(async (context, next) =>
 {

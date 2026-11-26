@@ -7,7 +7,7 @@ using Xunit;
 namespace Kompetensmatris.Tests;
 
 /// <summary>Startar applikationen i minnet med en egen, tillfällig datafil.</summary>
-public sealed class TestApp : WebApplicationFactory<Program>
+public sealed class TestApp(string? pathBase = null) : WebApplicationFactory<Program>
 {
     public const string Password = "testlösen";
     public string DataPath { get; } = Path.Combine(Path.GetTempPath(), "kompetensmatris-test-" + Guid.NewGuid().ToString("N"), "data.json");
@@ -16,6 +16,7 @@ public sealed class TestApp : WebApplicationFactory<Program>
     {
         builder.UseSetting("DATA_PATH", DataPath);
         builder.UseSetting("ADMIN_PASSWORD", Password);
+        if (pathBase != null) builder.UseSetting("PATH_BASE", pathBase);
     }
 
     public HttpClient Admin()
@@ -363,5 +364,30 @@ public class KodvyTests : IDisposable
         Assert.Equal("Träd", data.Nodes.Single(n => n.Id == root.Id).Title);
         Assert.Equal(root.Id, data.Nodes.Single(n => n.Id == b.Id).ParentId);
         Assert.Equal("Async/await", data.Nodes.Single(n => n.Id == otherTree.Id).Title);
+    }
+}
+
+public class PathBaseTests : IDisposable
+{
+    private readonly TestApp _app = new("/kompetens");
+
+    public void Dispose() => _app.Dispose();
+
+    [Fact]
+    public async Task Appen_svarar_under_PATH_BASE()
+    {
+        var client = _app.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/kompetens/api/data")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/kompetens/health")).StatusCode);
+        var page = await client.GetAsync("/kompetens/");
+        Assert.Equal(HttpStatusCode.OK, page.StatusCode);
+        Assert.Contains("Kompetensmatris", await page.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/kompetens/app.js")).StatusCode);
+
+        // Utan avslutande snedstreck skickas webbläsaren vidare, så att relativa adresser blir rätt.
+        var redirect = await client.GetAsync("/kompetens");
+        Assert.Equal(HttpStatusCode.MovedPermanently, redirect.StatusCode);
+        Assert.EndsWith("/kompetens/", redirect.Headers.Location?.OriginalString);
     }
 }

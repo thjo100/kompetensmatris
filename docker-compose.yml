@@ -1,14 +1,18 @@
 # Starta med:  docker compose up -d --build
-# Öppna sedan http://localhost:8080
+# Öppna sedan http://localhost:8080 (eller serverns namn och port).
 services:
   kompetensmatris:
     build: .
-    # Eller använd den färdiga imagen från Docker Hub:
-    # image: <ditt-dockerhub-konto>/kompetensmatris:latest
+    # Eller använd en färdig image från Docker Hub / ert register i stället för build:
+    # image: <konto>/kompetensmatris:1.0.0
     ports:
       - "8080:8080"
     environment:
       ADMIN_PASSWORD: "byt-till-ett-eget-ord"
+      # Bakom en omvänd proxy (IIS, nginx, Traefik …) som sköter https:
+      # ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+      # Under en undersökväg, t.ex. https://intranat/kompetens/, om proxyn INTE tar bort prefixet:
+      # PATH_BASE: "/kompetens"
     volumes:
       - kompetensdata:/data
     restart: unless-stopped

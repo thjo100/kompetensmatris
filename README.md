@@ -65,34 +65,228 @@ Frontend/klient
 
 ## Teknik
 
-- **ASP.NET Core 10** (minimal API, C#). Ingen databas: allt sparas i **en JSON-fil** som skrivs om vid varje ändring. Den förra versionen sparas som `.bak`.
+- **ASP.NET Core 10** (minimal API, C#, .NET 10 LTS som har stöd till november 2028). Ingen databas: allt sparas i **en JSON-fil** som skrivs om vid varje ändring. Den förra versionen sparas som `.bak`.
 - **Vanlig HTML, CSS och JavaScript** i `wwwroot`. Inga ramverk och inget byggsteg.
 - Inloggningen är avsiktligt enkel: lösenordet skickas i headern `X-Admin-Password` och jämförs med miljövariabeln `ADMIN_PASSWORD`. Läsning är öppen för alla. Det räcker på ett intranät men ger inget skydd mot någon som vill fuska.
 
 ```text
+Dockerfile                     Bygger imagen (se nedan)
+docker-compose.yml             Exempel på drift med Docker Compose
 src/Kompetensmatris/
-  Program.cs       API-endpoints och inloggningskontroll
-  Models.cs        Datamodell (noder, kurser) och all validering
-  Outline.cs       Tolkar inklistrade, indenterade listor
-  DataStore.cs     Läser och sparar JSON-filen
-  SeedData.cs      Exempelträdet som skapas vid första start
-  wwwroot/         index.html, app.js, style.css
+  Program.cs                   API-endpoints, inloggningskontroll och PATH_BASE
+  Models.cs                    Datamodell (noder, kurser) och all validering
+  Outline.cs                   Tolkar inklistrade, indenterade listor
+  DataStore.cs                 Läser och sparar JSON-filen
+  SeedData.cs                  Exempelträdet som skapas vid första start
+  wwwroot/                     index.html, app.js, style.css
 tests/Kompetensmatris.Tests/   Integrationstester för API:t (xUnit)
+demo/                          Demoversionen för claude.ai (ingår inte i Docker-bygget)
+.github/workflows/docker.yml   Testar, bygger och publicerar imagen i GitHub Actions
+```
+
+## Bygga och köra hos oss med Docker
+
+Här står allt som behövs för att bygga imagen och köra den i er Docker-miljö, steg för steg.
+
+### 1. Förutsättningar
+
+- **Docker** 20.10 eller nyare: Docker Engine på Linux eller Docker Desktop på Windows/Mac. På Windows ska Docker Desktop köra **Linux-containrar**.
+- **git** för att hämta koden.
+- **Nätverk:** byggdatorn måste kunna hämta två basimager från Microsofts register `mcr.microsoft.com`:
+  - `mcr.microsoft.com/dotnet/sdk:10.0` (bara för bygget, ca 1,3 GB på disk)
+  - `mcr.microsoft.com/dotnet/aspnet:10.0` (grunden för den färdiga imagen)
+
+  Själva bygget behöver **inget** annat nätverk: inga NuGet-paket och inga npm-paket. Det är provat med `docker build --network=none`.
+- Går Docker genom en proxy hos er gäller det bara när basimagerna hämtas. Ställ då in proxyn för Docker, inte i Dockerfile:
+  - Docker Desktop: *Settings → Resources → Proxies*
+  - Linux: [Configure the daemon to use a proxy](https://docs.docker.com/engine/daemon/proxy/)
+  - Gör proxyn TLS-inspektion måste organisationens rotcertifikat finnas i byggdatorns certifikatlager.
+- Får ni inte nå `mcr.microsoft.com` alls finns två vägar, se [Utan åtkomst till mcr.microsoft.com](#utan-åtkomst-till-mcrmicrosoftcom).
+
+### 2. Hämta koden
+
+```bash
+git clone https://github.com/thjo100/kompetensmatris.git
+```
+
+```bash
+cd kompetensmatris
+```
+
+### 3. Bygg imagen
+
+```bash
+docker build --pull -t kompetensmatris:1.0.0 .
+```
+
+`--pull` hämtar senaste patchversionen av .NET 10 (säkerhetsuppdateringar). Imagen blir ca 350 MB.
+
+**Bygger du på en Mac med Apple-processor för en vanlig server (x86-64):**
+
+```bash
+docker buildx build --platform linux/amd64 --pull -t kompetensmatris:1.0.0 --load .
+```
+
+### 4. Provkör
+
+```bash
+docker run -d --name kompetensmatris -p 8080:8080 -e ADMIN_PASSWORD=byt-mig -v kompetensdata:/data --restart unless-stopped kompetensmatris:1.0.0
+```
+
+```bash
+curl http://localhost:8080/health
+```
+
+Svaret ska vara `ok`. Öppna sedan http://localhost:8080 och logga in med lösenordet. Första gången skapas exempelträdet *LST Systemutvecklare* och en exempelkurs, som du kan ändra eller ta bort i adminläget.
+
+Loggar: `docker logs kompetensmatris`.
+
+Med Docker Compose i stället (byt lösenordet i `docker-compose.yml` först):
+
+```bash
+docker compose up -d --build
+```
+
+### 5. Lägg imagen i ett register
+
+**Docker Hub, manuellt:**
+
+```bash
+docker login
+```
+
+```bash
+docker tag kompetensmatris:1.0.0 <konto>/kompetensmatris:1.0.0
+```
+
+```bash
+docker push <konto>/kompetensmatris:1.0.0
+```
+
+**Eget/internt register** (t.ex. Harbor, Artifactory, Nexus eller Azure Container Registry) fungerar likadant. Byt `<konto>` mot registrets adress och sökväg, till exempel `<register>/team/kompetensmatris:1.0.0`.
+
+**Docker Hub, automatiskt med GitHub Actions** (`.github/workflows/docker.yml`): lägg till följande två hemligheter under *Settings → Secrets and variables → Actions* i GitHub-repot.
+
+- `DOCKERHUB_USERNAME`: användarnamn eller organisation på Docker Hub
+- `DOCKERHUB_TOKEN`: en *Personal access token* från Docker Hub (*Account settings → Personal access tokens*, behörighet *Read & Write*)
+
+Flödet kör testerna och bygger imagen i varje pull request, utan att pusha. Det publicerar till Docker Hub i två fall:
+
+- en push till `main` ger `<konto>/kompetensmatris:latest` och en tagg med commit-hashen
+- en tagg som `v1.2.0` ger även `<konto>/kompetensmatris:1.2.0`
+
+### 6. Kör i driftmiljön
+
+Det enda som krävs är imagen, ett lösenord och en volym på `/data`:
+
+```bash
+docker run -d --name kompetensmatris -p 8080:8080 -e ADMIN_PASSWORD=<lösenord> -v kompetensdata:/data --restart unless-stopped <konto>/kompetensmatris:1.0.0
+```
+
+Med Compose: byt `build: .` mot `image: <konto>/kompetensmatris:1.0.0` i `docker-compose.yml`.
+
+**Bakom en omvänd proxy** (IIS, nginx, Traefik, F5 …) som sköter https: containern talar bara http på port 8080. Sätt `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` så att appen förstår att besökaren kom via https. Proxyn ska skicka `X-Forwarded-Proto`, vilket de flesta gör som standard.
+
+**Under en undersökväg**, t.ex. `https://intranat/kompetens/`, finns två sätt:
+
+- Proxyn tar bort `/kompetens` innan anropet når containern: ingen inställning behövs.
+- Proxyn skickar vidare med `/kompetens` kvar: sätt `PATH_BASE=/kompetens`.
+
+Exempel för nginx med prefixet kvar:
+
+```nginx
+location /kompetens/ {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+**Övervakning:** `GET /health` (eller `/kompetens/health` med `PATH_BASE`) svarar `ok`. Imagen har ingen `HEALTHCHECK`, eftersom den saknar curl, så övervaka adressen utifrån.
+
+### 7. Uppgradera och backa
+
+Bygg eller hämta den nya versionen, ta bort den gamla containern och starta den nya med **samma volym**. Datan ligger kvar i volymen.
+
+```bash
+docker rm -f kompetensmatris
+```
+
+```bash
+docker run -d --name kompetensmatris -p 8080:8080 -e ADMIN_PASSWORD=<lösenord> -v kompetensdata:/data --restart unless-stopped <konto>/kompetensmatris:1.1.0
+```
+
+Med Compose: ändra taggen i `docker-compose.yml` och kör `docker compose up -d`. För att backa startar du den förra taggen på samma sätt.
+
+### Utan åtkomst till mcr.microsoft.com
+
+**Intern spegel av MCR:** peka bygget på er spegel med `DOTNET_REGISTRY`. Imagen hämtar då `<er-spegel>/dotnet/sdk:10.0` och `<er-spegel>/dotnet/aspnet:10.0`.
+
+```bash
+docker build --build-arg DOTNET_REGISTRY=<er-spegel> -t kompetensmatris:1.0.0 .
+```
+
+**Helt utan nätverk:** bygg på en dator som har internet och flytta imagen som en fil.
+
+```bash
+docker save kompetensmatris:1.0.0 -o kompetensmatris-1.0.0.tar
+```
+
+```bash
+docker load -i kompetensmatris-1.0.0.tar
 ```
 
 ## Konfiguration
 
 | Miljövariabel    | Standard                        | Beskrivning                                  |
 |------------------|---------------------------------|----------------------------------------------|
-| `ADMIN_PASSWORD` | `admin`                         | Lösenordet för adminläget. **Byt det.**      |
-| `DATA_PATH`      | `data/kompetensmatris.json` (i Docker `/data/kompetensmatris.json`) | Var datan sparas. |
-| `TZ`             | `Europe/Stockholm` (i Docker)   | Tidszon, används för exempelkursen.          |
+| `ADMIN_PASSWORD` | `admin`                         | Lösenordet för adminläget. **Byt det.** Loggen varnar om det inte är satt. |
+| `DATA_PATH`      | `/data/kompetensmatris.json` i Docker (annars `data/kompetensmatris.json`) | Var datan sparas. |
+| `PATH_BASE`      | tomt                            | Undersökväg, t.ex. `/kompetens`, när proxyn inte tar bort prefixet. |
+| `ASPNETCORE_FORWARDEDHEADERS_ENABLED` | `false`    | Sätt `true` bakom en proxy som sköter https. |
+| `TZ`             | `Europe/Stockholm` i Docker     | Tidszon. Kurstider sparas i UTC och visas i besökarens egen tidszon, så detta påverkar bara exempelkursen. |
+| `ASPNETCORE_HTTP_PORTS` | `8080` i Docker          | Porten i containern. Ändra hellre porten på värden (`-p 80:8080`). |
 
-Applikationen lyssnar på port **8080** i containern.
+Imagen i korthet:
 
-Första gången (när datafilen saknas) skapas exempelträdet *LST Systemutvecklare* och en exempelkurs. Ta bort eller ändra dem i adminläget.
+- grund: `mcr.microsoft.com/dotnet/aspnet:10.0` (Ubuntu 24.04)
+- port: 8080
+- data: volym på `/data`
+- användare: körs som `app` (uid 1654), inte root
 
-## Köra lokalt
+## Säkerhetskopiering
+
+All data finns i en enda fil, `/data/kompetensmatris.json`. Den kan kopieras ut medan containern kör:
+
+```bash
+docker cp kompetensmatris:/data/kompetensmatris.json ./kompetensmatris-backup.json
+```
+
+Det går också att använda **Exportera** i adminläget.
+
+För att läsa tillbaka en kopia: logga in, välj **Importera** och välj filen. Filen kontrolleras först, så en trasig fil skriver inte över något. Alternativt kopierar du in filen och startar om containern:
+
+```bash
+docker cp ./kompetensmatris-backup.json kompetensmatris:/data/kompetensmatris.json
+```
+
+```bash
+docker restart kompetensmatris
+```
+
+## Felsökning
+
+| Symptom | Orsak och åtgärd |
+|---------|------------------|
+| `Access to the path '/data/kompetensmatris.json.tmp' is denied` i loggen och containern stannar | Du monterar en katalog från värden (`-v /srv/kompetensmatris:/data`) som containern inte får skriva i. Kör `sudo chown -R 1654:1654 /srv/kompetensmatris`, eller använd en namngiven volym (`-v kompetensdata:/data`) som i exemplen. |
+| Bygget fastnar eller misslyckas på `FROM mcr.microsoft.com/...` | Byggdatorn når inte Microsofts register. Kontrollera proxyinställningen för Docker, eller använd en spegel eller `docker save`/`docker load` (se ovan). |
+| `ADMIN_PASSWORD är inte satt` i loggen | Lösenordet är `admin`. Sätt `-e ADMIN_PASSWORD=...`. |
+| Sidan visas men trädet laddas inte under en undersökväg | Proxyn och `PATH_BASE` stämmer inte överens. Kolla att `.../kompetens/api/data` svarar och läs avsnittet om undersökväg. |
+| Länkar och omdirigeringar blir `http://` fast sidan körs på `https://` | Sätt `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` och kontrollera att proxyn skickar `X-Forwarded-Proto`. |
+| `port is already allocated` | Port 8080 används redan på värden. Välj en annan: `-p 8081:8080`. |
+| `exec format error` | Imagen är byggd för fel processor, t.ex. på en Mac med Apple-processor. Bygg med `--platform linux/amd64`. |
+
+## Utveckla utan Docker
 
 Kräver [.NET 10 SDK](https://dotnet.microsoft.com/download).
 
@@ -100,69 +294,15 @@ Kräver [.NET 10 SDK](https://dotnet.microsoft.com/download).
 ADMIN_PASSWORD=hemligt dotnet run --project src/Kompetensmatris
 ```
 
-Öppna adressen som skrivs ut i terminalen. Datan hamnar i `src/Kompetensmatris/data/`.
-
-Kör testerna:
+Öppna adressen som skrivs ut i terminalen. Datan hamnar i `src/Kompetensmatris/data/`. Ändringar i `wwwroot` syns direkt när du laddar om sidan.
 
 ```bash
 dotnet test
 ```
 
-## Docker
+## Demoversionen
 
-Bygg och starta med Docker Compose (byt lösenordet i `docker-compose.yml` först):
-
-```bash
-docker compose up -d --build
-```
-
-Eller med vanliga Docker-kommandon:
-
-```bash
-docker build -t kompetensmatris .
-```
-
-```bash
-docker run -d --name kompetensmatris -p 8080:8080 -e ADMIN_PASSWORD=byt-mig -v kompetensdata:/data --restart unless-stopped kompetensmatris
-```
-
-Öppna sedan http://localhost:8080. Datan ligger i volymen `kompetensdata`, så den finns kvar när containern uppdateras eller startas om. Monterar du en katalog från värden i stället (`-v /sökväg:/data`) måste den vara skrivbar för användaren i containern (uid `1654`).
-
-Hälsokontroll: `GET /health` svarar `ok`.
-
-### Publicera på Docker Hub
-
-**Automatiskt med GitHub Actions** (`.github/workflows/docker.yml`): lägg till följande två hemligheter under *Settings → Secrets and variables → Actions* i GitHub-repot.
-
-- `DOCKERHUB_USERNAME`: ditt användarnamn eller din organisation på Docker Hub
-- `DOCKERHUB_TOKEN`: en *Personal access token* från Docker Hub (*Account settings → Personal access tokens*, behörighet *Read & Write*)
-
-Därefter körs testerna och imagen byggs vid varje push till `main`:
-
-- en push till `main` publicerar `<konto>/kompetensmatris:latest` och en tagg med commit-hashen
-- en tagg som `v1.2.0` publicerar även `:1.2.0`
-
-Saknas hemligheterna byggs imagen ändå, men den pushas inte.
-
-**Manuellt:**
-
-```bash
-docker login
-```
-
-```bash
-docker build -t <konto>/kompetensmatris:latest .
-```
-
-```bash
-docker push <konto>/kompetensmatris:latest
-```
-
-I driftmiljön räcker det sedan att köra imagen med `ADMIN_PASSWORD` och en volym på `/data` (se `docker-compose.yml`, byt `build: .` mot `image: <konto>/kompetensmatris:latest`).
-
-## Säkerhetskopiering
-
-Allt finns i filen `/data/kompetensmatris.json`. Kopiera den, eller använd **Exportera** i adminläget. **Importera** ersätter all data med en exporterad fil. Filen kontrolleras först, så en trasig fil skriver inte över något.
+`demo/` innehåller det som behövs för demon på claude.ai: samma gränssnitt, men med datan i artefaktens delade databas i stället för i servern. `python3 demo/build.py` skriver `demo/dist/kompetensmatris.html`. Den används inte av Docker-bygget.
 
 ## API
 

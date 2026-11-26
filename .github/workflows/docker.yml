@@ -18,13 +18,13 @@ jobs:
       - run: dotnet test
 
   docker:
-    # Bygger alltid imagen. Den pushas till Docker Hub bara om hemligheterna
+    # Bygger alltid imagen (även i pull requests, för att se att Dockerfile fungerar).
+    # Den pushas till Docker Hub bara från main eller en v*-tagg, och bara om hemligheterna
     # DOCKERHUB_USERNAME och DOCKERHUB_TOKEN finns (Settings → Secrets and variables → Actions).
     needs: test
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     env:
-      PUSH: ${{ secrets.DOCKERHUB_TOKEN != '' }}
+      PUSH: ${{ github.event_name != 'pull_request' && secrets.DOCKERHUB_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v3
