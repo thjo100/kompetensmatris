@@ -134,7 +134,8 @@ async function api(method, url, body) {
   const headers = {};
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (state.password) headers['X-Admin-Password'] = state.password;
-  const res = await fetch(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  // Relativ adress ("api/..."), så att appen fungerar även under en undersökväg som /kompetens/.
+  const res = await fetch(url.replace(/^\//, ''), { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   if (res.status === 401 && url !== '/api/login') {
     setPassword(null);
     render();
