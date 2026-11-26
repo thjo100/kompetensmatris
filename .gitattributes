@@ -1,0 +1,2 @@
+# Skript måste ha LF-radslut, även om repot klonas på Windows.
+*.sh text eol=lf

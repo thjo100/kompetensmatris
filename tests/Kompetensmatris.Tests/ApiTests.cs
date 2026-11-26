@@ -56,7 +56,7 @@ public class ApiTests : IDisposable
         var data = await GetData();
 
         var root = Assert.Single(data.Nodes, n => n.ParentId == null);
-        Assert.Equal("LST Systemutvecklare", root.Title);
+        Assert.Equal("Systemutvecklare", root.Title);
         Assert.Equal(7, data.Nodes.Count(n => n.ParentId == root.Id));
         Assert.Equal(1, data.Nodes.Single(n => n.Title == "Async/await").Priority);
         Assert.Single(data.Courses);
@@ -251,7 +251,7 @@ public class ApiTests : IDisposable
         var res = await admin.PutAsJsonAsync("/api/data", broken, Json);
 
         Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
-        Assert.Contains((await GetData()).Nodes, n => n.Title == "LST Systemutvecklare");
+        Assert.Contains((await GetData()).Nodes, n => n.Title == "Systemutvecklare");
     }
 
     [Fact]
@@ -328,7 +328,7 @@ public class KodvyTests : IDisposable
         var data = await GetData();
         Assert.DoesNotContain(data.Nodes, n => n.Id == b.Id);
         Assert.DoesNotContain(data.Courses, c => c.Id == course.Id);
-        Assert.Contains(data.Nodes, n => n.Title == "LST Systemutvecklare"); // andra träd orörda
+        Assert.Contains(data.Nodes, n => n.Title == "Systemutvecklare"); // andra träd orörda
     }
 
     [Fact]
