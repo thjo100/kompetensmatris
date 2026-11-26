@@ -1,0 +1,446 @@
+/* ---------- Färger ---------- */
+:root {
+  --bg: #f5f8fc;
+  --surface: #ffffff;
+  --text: #1c2b3c;
+  --muted: #5d6f84;
+  --border: #d5deea;
+  --line: #4f88c6;
+  --box-bg: #edf4fc;
+  --box-border: #4f88c6;
+  --box-hover: #dcebfa;
+  --root-bg: #e1eefb;
+  --primary: #2a6db5;
+  --primary-text: #ffffff;
+  --danger: #c62828;
+  --prio-1: #d32f2f;
+  --prio-2: #1e7fd8;
+  --prio-3: #3d9a40;
+  --course: #b45309;
+  --course-bg: #fff4e0;
+  --live: #15803d;
+  --live-bg: #e3f7e8;
+  --match: #ffe066;
+  --shadow: 0 1px 2px rgb(20 40 70 / 0.08), 0 4px 14px rgb(20 40 70 / 0.08);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111821;
+    --surface: #1a2430;
+    --text: #e3eaf3;
+    --muted: #96a6b9;
+    --border: #2e3c4d;
+    --line: #5c93cf;
+    --box-bg: #1d2d40;
+    --box-border: #5c93cf;
+    --box-hover: #24384f;
+    --root-bg: #22364d;
+    --primary: #4a8fd8;
+    --primary-text: #0b1520;
+    --danger: #ef6b6b;
+    --prio-1: #e5534b;
+    --prio-2: #3b91e6;
+    --prio-3: #4caf50;
+    --course: #f5a524;
+    --course-bg: #3a2c12;
+    --live: #4ade80;
+    --live-bg: #143322;
+    --match: #7a6500;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 14px rgb(0 0 0 / 0.3);
+    color-scheme: dark;
+  }
+}
+
+/* ---------- Grund ---------- */
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+}
+[hidden] { display: none !important; }
+a { color: var(--primary); }
+.muted { color: var(--muted); }
+
+button, select, input, textarea {
+  font: inherit;
+  color: inherit;
+}
+button, select {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+button:hover { border-color: var(--line); }
+button.primary { background: var(--primary); border-color: var(--primary); color: var(--primary-text); }
+button.danger { color: var(--danger); }
+button.icon { min-width: 30px; padding: 5px 6px; }
+input, textarea {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  width: 100%;
+}
+input:focus, textarea:focus, select:focus, button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+/* ---------- Toppfält ---------- */
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.brand { font-weight: 700; font-size: 16px; }
+.search { display: flex; align-items: center; gap: 8px; }
+.search input { width: 200px; }
+.spacer { flex: 1; }
+.group { display: flex; gap: 4px; }
+.zoom-level { font-variant-numeric: tabular-nums; min-width: 52px; }
+
+/* ---------- Kursremsa ---------- */
+.course-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--course-bg);
+  border-bottom: 1px solid var(--border);
+}
+.course-bar .label { font-weight: 600; color: var(--course); }
+.course-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  border-color: var(--course);
+  padding: 3px 10px 3px 4px;
+  text-align: left;
+}
+.course-chip .when {
+  border-radius: 999px;
+  padding: 1px 8px;
+  background: var(--course);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.course-chip.live { border-color: var(--live); }
+.course-chip.live .when { background: var(--live); color: var(--surface); }
+
+.admin-hint {
+  padding: 6px 16px;
+  font-size: 13px;
+  color: var(--muted);
+  background: var(--surface);
+  border-bottom: 1px dashed var(--border);
+}
+
+/* ---------- Trädet ---------- */
+.canvas { flex: 1; overflow: auto; }
+.tree {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 100%;
+  padding: 24px 24px 80px;
+}
+
+.root-row { position: relative; padding-bottom: 26px; display: flex; flex-direction: column; align-items: center; }
+.root-row.has-kids::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  height: 26px;
+  border-left: 2px solid var(--line);
+}
+
+.cats {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.cats > .bar { position: absolute; top: 0; height: 0; border-top: 2px solid var(--line); }
+.cat {
+  position: relative;
+  padding: 26px 14px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.cat > .box::before {
+  /* Lodrätt streck upp till den vågräta linjen. */
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -28px;
+  height: 26px;
+  border-left: 2px solid var(--line);
+}
+
+/* Listor med underområden: lodrätt streck till vänster och vågrätt streck in till varje ruta. */
+.children {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 14px;
+}
+.children > li { position: relative; padding: 5px 0 5px 20px; }
+.children > li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-left: 2px solid var(--line);
+}
+.children > li:last-child::before { bottom: auto; height: 20px; }
+.children > li::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 19px;
+  width: 20px;
+  border-top: 2px solid var(--line);
+}
+
+/* Rutorna */
+.box {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 3px 10px;
+  background: var(--box-bg);
+  border: 1.5px solid var(--box-border);
+  border-radius: 9px;
+  white-space: nowrap;
+  box-shadow: 0 1px 0 rgb(20 40 70 / 0.06);
+}
+.box:hover { background: var(--box-hover); }
+.box.root { font-size: 20px; padding: 10px 26px; background: var(--root-bg); border-width: 2px; border-radius: 10px; }
+.box.cat-box { font-size: 15px; padding: 5px 14px; border-radius: 12px; }
+.box.match { background: var(--match); }
+.box.flash { animation: flash 1.6s ease-out 2; }
+@keyframes flash { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 30% { box-shadow: 0 0 0 6px var(--match); } }
+.box.has-course { border-color: var(--course); box-shadow: 0 0 0 2px var(--course-bg); }
+.box.has-live { border-color: var(--live); box-shadow: 0 0 0 2px var(--live-bg); }
+
+.box .title {
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.box .title.has-info { text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
+
+.prio {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  flex: none;
+}
+.prio-1 { background: var(--prio-1); }
+.prio-2 { background: var(--prio-2); }
+.prio-3 { background: var(--prio-3); }
+
+.course-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  border: 1px solid var(--course);
+  background: var(--course-bg);
+  color: var(--course);
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 20px;
+}
+.course-badge.live { border-color: var(--live); background: var(--live-bg); color: var(--live); }
+.course-badge.live .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--live); animation: pulse 1.4s infinite; }
+.course-badge.sub { font-weight: 500; border-style: dashed; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 var(--live); } 70% { box-shadow: 0 0 0 6px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+
+/* Knappen under en ruta som fäller ut/ihop underområdena (visar antal när den är ihopfälld). */
+.stem { position: relative; padding: 4px 0 0 3px; height: 26px; }
+.stem::before {
+  content: "";
+  position: absolute;
+  left: 14px;
+  top: 0;
+  height: 5px;
+  border-left: 2px solid var(--line);
+}
+.stem.open::after {
+  content: "";
+  position: absolute;
+  left: 14px;
+  top: 21px;
+  bottom: 0;
+  border-left: 2px solid var(--line);
+}
+.toggle {
+  position: relative;
+  z-index: 1;
+  min-width: 24px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 9px;
+  border: 1.5px solid var(--line);
+  background: var(--surface);
+  font-size: 11px;
+  line-height: 13px;
+  color: var(--muted);
+}
+.toggle:hover { background: var(--box-hover); }
+
+/* Adminknappar på rutorna */
+.actions { display: none; gap: 2px; margin-left: 4px; }
+.admin .box:hover .actions, .admin .box:focus-within .actions { display: inline-flex; }
+@media (hover: none) { .admin .actions { display: inline-flex; } }
+.actions button {
+  border: 0;
+  background: none;
+  padding: 0 4px;
+  font-size: 13px;
+  line-height: 20px;
+  border-radius: 4px;
+  color: var(--muted);
+}
+.actions button:hover { background: var(--surface); color: var(--text); }
+
+.add-row input {
+  width: 260px;
+  padding: 4px 8px;
+  border: 1.5px dashed var(--box-border);
+  border-radius: 9px;
+}
+.cat.adding { padding-top: 26px; }
+
+.empty { text-align: center; padding: 60px 20px; color: var(--muted); }
+
+/* ---------- Dialoger ---------- */
+dialog {
+  width: min(640px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+dialog[open] { display: flex; flex-direction: column; }
+dialog::backdrop { background: rgb(10 20 35 / 0.45); }
+.dlg-head { display: flex; align-items: center; gap: 8px; padding: 16px 20px 8px; }
+.dlg-head h2 { margin: 0; font-size: 18px; flex: 1; }
+.dlg-body { padding: 8px 20px 16px; overflow: auto; }
+.dlg-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--border);
+}
+.dlg-foot .left { margin-right: auto; }
+.breadcrumb { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+.description { white-space: pre-wrap; margin: 0 0 12px; }
+.section-title { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 16px 0 6px; }
+.link-list { margin: 0; padding-left: 18px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips button { border-radius: 999px; padding: 2px 10px; }
+
+.field { display: grid; gap: 4px; margin-bottom: 12px; }
+.field label { font-weight: 600; font-size: 13px; }
+.field .hint { font-size: 12px; color: var(--muted); }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+textarea { resize: vertical; min-height: 70px; }
+
+/* Kurskort */
+.course-card {
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--course);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+.course-card.live { border-left-color: var(--live); }
+.course-card.past { border-left-color: var(--border); opacity: 0.8; }
+.course-card h3 { margin: 2px 0 4px; font-size: 16px; }
+.course-card .meta { color: var(--muted); font-size: 13px; display: grid; gap: 2px; }
+.course-card .actions-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.status {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-radius: 4px;
+  padding: 1px 6px;
+  background: var(--course-bg);
+  color: var(--course);
+}
+.status.live { background: var(--live-bg); color: var(--live); }
+.status.past { background: var(--bg); color: var(--muted); }
+a.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+a.button.primary { background: var(--primary); border-color: var(--primary); color: var(--primary-text); font-weight: 600; }
+details summary { cursor: pointer; color: var(--muted); margin: 8px 0; }
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 32px);
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: var(--text);
+  color: var(--bg);
+  box-shadow: var(--shadow);
+  z-index: 10;
+}
+.toast.error { background: var(--danger); color: #fff; }
+
+@media (max-width: 640px) {
+  .topbar { padding: 8px 16px; }
+  .search, .search input { width: 100%; }
+  .spacer { display: none; }
+  .row2 { grid-template-columns: 1fr; }
+  .tree { padding: 16px 16px 60px; }
+}
